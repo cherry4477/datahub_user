@@ -1,88 +1,81 @@
 package com.ldp.datahub;
 
-import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
+import org.easymock.EasyMock;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.webflow.config.FlowDefinitionResource;
+import org.springframework.webflow.config.FlowDefinitionResourceFactory;
+import org.springframework.webflow.core.collection.LocalAttributeMap;
+import org.springframework.webflow.core.collection.MutableAttributeMap;
+import org.springframework.webflow.test.MockExternalContext;
+import org.springframework.webflow.test.MockFlowBuilderContext;
+import org.springframework.webflow.test.execution.AbstractXmlFlowExecutionTests;
 
-import com.ldp.datahub.dao.QuotaDao;
-import com.ldp.datahub.entity.Quota;
+public class QuotaDaoTests extends AbstractXmlFlowExecutionTests {
 
-@RunWith(SpringJUnit4ClassRunner.class)  
-@ContextConfiguration("classpath:/applicationContext.xml") 
-public class QuotaDaoTests {
-	
-	@Autowired
-	private QuotaDao quotaDao;
-	private SimpleDateFormat df=new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-	
-	@Test
-	public void testGetAndInsert(){
-		Quota target = makeQuota();
-		quotaDao.saveQuota(target);
-		try {
-			Quota actual = quotaDao.getQuota(target.getUserId(), target.getQuotaName());
-			Assert.assertEquals(df.format(target.getOpTime()), df.format(actual.getOpTime()));
-			Assert.assertEquals(target.getQuotaName(), actual.getQuotaName());
-			Assert.assertEquals(target.getUnit(), actual.getUnit());
-			Assert.assertEquals(target.getOpUser(), actual.getOpUser());
-			Assert.assertEquals(target.getQuotaValue(), actual.getQuotaValue());
-			Assert.assertEquals(target.getUserId(), actual.getUserId());
-			Assert.assertEquals(target.getUseValue(), actual.getUseValue());
-			
-		} finally {
-			quotaDao.delete(target.getUserId(), target.getQuotaName());
-		}
-	}
-	
-	@Test
-	public void testUpdateQuota(){
-		Quota target = makeQuota();
-		quotaDao.saveQuota(target);
-		try {
-			int value=1000;
-			int opUser=19;
-			
-			quotaDao.updateQuota(value, opUser, target.getUserId(), target.getQuotaName());
-			Quota actual = quotaDao.getQuota(target.getUserId(), target.getQuotaName());
-			Assert.assertEquals(value, actual.getQuotaValue());
-			Assert.assertEquals(opUser, actual.getOpUser());
-			
-		}finally {
-			quotaDao.delete(target.getUserId(), target.getQuotaName());
-		}
-	}
-	
-	@Test
-	public void testUpdateUse(){
-		Quota target = makeQuota();
-		quotaDao.saveQuota(target);
-		try {
-			int add=10;
-			quotaDao.updateQuotaUse(add, target.getUserId(), target.getQuotaName());
-			Quota actual = quotaDao.getQuota(target.getUserId(), target.getQuotaName());
-			Assert.assertEquals(target.getUseValue()+add, actual.getUseValue());
-			
-		}finally {
-			quotaDao.delete(target.getUserId(), target.getQuotaName());
-		}
-	}
-	
-	private Quota makeQuota(){
-		Quota quota = new Quota();
-		quota.setOpTime(new Timestamp(System.currentTimeMillis()));
-		quota.setOpUser(-1);
-		quota.setQuotaName("testQuota");
-		quota.setQuotaValue(100);
-		quota.setUnit("M");
-		quota.setUserId(-2);
-		quota.setUseValue(30);
-		return quota;
+	private BookingService bookingService;
+
+	protected void setUp() {
+		bookingService = EasyMock.createMock(BookingService.class);
 	}
 
+	@Override
+	protected FlowDefinitionResource getResource(FlowDefinitionResourceFactory resourceFactory) {
+		return resourceFactory.createFileResource("src/main/webapp/WEB-INF/hotels/booking/booking-flow.xml");
+	}
+
+	@Override
+	protected void configureFlowBuilderContext(MockFlowBuilderContext builderContext) {
+		builderContext.registerBean("bookingService", bookingService);
+	}
+
+	public void testStartBookingFlow() {
+		Booking booking = createTestBooking();
+
+		EasyMock.expect(bookingService.createBooking(1L, "keith")).andReturn(booking);
+
+		EasyMock.replay(bookingService);
+
+		MutableAttributeMap input = new LocalAttributeMap();
+		input.put("hotelId", "1");
+		MockExternalContext context = new MockExternalContext();
+		context.setCurrentUser("keith");
+		startFlow(input, context);
+
+		assertCurrentStateEquals("enterBookingDetails");
+		assertResponseWrittenEquals("enterBookingDetails", context);
+		assertTrue(getRequiredFlowAttribute("booking") instanceof Booking);
+
+		EasyMock.verify(bookingService);
+	}
+
+	public void testEnterBookingDetails_Proceed() {
+		setCurrentState("enterBookingDetails");
+		getFlowScope().put("booking", createTestBooking());
+
+		MockExternalContext context = new MockExternalContext();
+		context.setEventId("proceed");
+		resumeFlow(context);
+
+		assertCurrentStateEquals("reviewBooking");
+		assertResponseWrittenEquals("reviewBooking", context);
+	}
+
+	public void testReviewBooking_Confirm() {
+		setCurrentState("reviewBooking");
+		getFlowScope().put("booking", createTestBooking());
+		MockExternalContext context = new MockExternalContext();
+		context.setEventId("confirm");
+		resumeFlow(context);
+		assertFlowExecutionEnded();
+		assertFlowExecutionOutcomeEquals("bookingConfirmed");
+	}
+
+	private Booking createTestBooking() {
+		Hotel hotel = new Hotel();
+		hotel.setId(1L);
+		hotel.setName("Jameson Inn");
+		User user = new User("keith", "pass", "Keith Donald");
+		Booking booking = new Booking(hotel, user);
+		return booking;
+	}
 }
