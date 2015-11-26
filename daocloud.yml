@@ -6,6 +6,7 @@ env:
 before_script:
   - mkdir -p /usr/src/datahub_user
   - git clone -b release/v0.4 https://github.com/cherry4477/datahub_user "/usr/src/datahub_user"
+  - apt-get install -y maven
 script:
   - mvn test
   
