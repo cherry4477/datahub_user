@@ -7,5 +7,5 @@ before_script:
   - mkdir -p /usr/src/datahub_user
   - git clone -b releasev0.4 https://github.com/cherry4477/datahub_user "/usr/src/datahub_user"
 script:
-  mvn test
+  mvn datahub_user/src/main/test
   
